@@ -26,6 +26,8 @@ ARUCO_DICT = {
 }
 
 def aruco_display(corners, ids, rejected, image):
+    marker_list = []
+    
     if len(corners) > 0:
         ids = ids.flatten()
         
@@ -39,30 +41,30 @@ def aruco_display(corners, ids, rejected, image):
             topRight = (int(topRight[0]), int(topRight[1]))
             bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
             bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-
+            
             # Vẽ khung marker
             cv2.line(image, topLeft, topRight, (0, 255, 0), 2)
             cv2.line(image, topRight, bottomRight, (0, 255, 0), 2)
             cv2.line(image, bottomRight, bottomLeft, (0, 255, 0), 2)
             cv2.line(image, bottomLeft, topLeft, (0, 255, 0), 2)
-
+            
             # Tính tâm marker
             cX = int((topLeft[0] + bottomRight[0]) / 2.0)
             cY = int((topLeft[1] + bottomRight[1]) / 2.0)
             cv2.circle(image, (cX, cY), 4, (0, 0, 255), -1)
-
+            
             # ✅ Tính góc xoay của marker
             vector = np.array(topRight) - np.array(topLeft)  # Vector từ top-left đến top-right
             angle = np.degrees(np.arctan2(vector[1], vector[0]))  # Tính góc bằng arctan2
             if angle < 0:
                 angle += 360  # Chuyển về khoảng [0, 360]
-
+            
             # Hiển thị ID và góc xoay trên ảnh
             text = f"ID: {markerID}, Angle: {angle:.1f} deg"
             cv2.putText(image, text, (topLeft[0], topLeft[1] - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-            # In thông tin marker ra terminal
-            print(f"[Inference] ArUco marker ID: {markerID}, Angle: {angle:.1f}°")
-
-    return image
+            
+            # Thêm thông tin vào danh sách
+            marker_list.append({"ID": int(markerID), "Angle": round(angle, 1)})
+    
+    return image, marker_list

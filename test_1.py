@@ -1,69 +1,121 @@
+from config import config
+import argparse
+from media_manager import MediaManager
 import cv2
-import cv2.aruco as aruco
-import numpy as np
+from utils_original import ARUCO_DICT, aruco_display
+import sys
 
-# Khởi tạo kết nối webcam
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Không thể mở webcam")
-    exit()
 
-# Lấy từ điển ArUco DICT_5X5_100 bằng cách sử dụng hàm getPredefinedDictionary
-aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_5X5_100)
+def process_source(source_arg):
+    """
+    Process the source argument to determine the type of input.
+    - '0': Webcam
+    - Single camera ID: Generate RTSP URL
+    - Multiple camera IDs: Write RTSP URLs or webcam ID to device.txt
+    """
+    if source_arg.isdigit():  # Single numeric ID (e.g., '0' or '1')
+        if source_arg == "0":  # Webcam
+            config.camera_names.append("webcam")
+            return "0"
+        else:  # Single camera
+            rtsp_urls = config.create_rtsp_urls_from_mongo([int(source_arg)])
+            if rtsp_urls:
+                return rtsp_urls[0]
+            else:
+                raise ValueError(f"Could not retrieve RTSP URL for camera ID: {source_arg}")
 
-# Khởi tạo đối tượng tham số cho việc phát hiện marker
-parameters = aruco.DetectorParameters()
+    if "," in source_arg:  # Multiple IDs (e.g., '0,1,2')
+        device_ids = source_arg.split(",")
+        devices = []
+        for device_id in device_ids:
+            if device_id.strip().isdigit():  # Webcam or camera ID
+                if device_id.strip() == "0":  # Webcam
+                    devices.append("0")
+                else:
+                    rtsp_urls = config.create_rtsp_urls_from_mongo([int(device_id.strip())])
+                    if rtsp_urls:
+                        devices.extend(rtsp_urls)
+                    else:
+                        raise ValueError(f"Could not retrieve RTSP URL for camera ID: {device_id.strip()}")
+        # Write to device.txt
+        with open("device.txt", "w") as f:
+            for device in devices:
+                f.write(f"{device}\n")
+        return "device.txt"
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Không nhận được khung hình từ webcam")
-        break
+    return source_arg  # If it's not numeric or a list, assume it's a file path
 
-    # Chuyển đổi khung hình sang grayscale (tối ưu cho phát hiện marker)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+parser = argparse.ArgumentParser(description="Run face detection and analysis.")
+parser.add_argument("--source", type=str, required=True, help="Source for the media (e.g., '0' for webcam or a video file path).")
+parser.add_argument("--save", action="store_true", help="Enable saving processed media.")
+parser.add_argument("--face_recognition", action="store_true", help="Enable face recognition.")
+parser.add_argument("--face_emotion", action="store_true", help="Enable face emotion analysis.")
+parser.add_argument("--check_small_face", action="store_true", help="Enable small face checking.")
+parser.add_argument("--streaming", action="store_true", help="Enable streaming mode.")
+parser.add_argument("--export_data", action="store_true", help="Enable data export.")
+parser.add_argument("--time_to_save", type=int, default=5, help="Time interval (in seconds) to save exported data.")
+parser.add_argument("--show_time_process", action="store_true", help="Enable display of process time.")
+parser.add_argument("--raise_hand", action="store_true", help="Enable raise hand detection.")
+parser.add_argument("--view_img", action="store_true", help="Enable display.")
+parser.add_argument("--line_thickness", type=int, default=3, help="Line thickness")
+
+args = parser.parse_args()
+
+processed_source = process_source(args.source)
+if processed_source is None:
+    print("Failed to process --source. Exiting.")
+    exit(1)
+
+if isinstance(processed_source, str) and processed_source == "device.txt":
+    print("\nGenerated device.txt with the following sources:")
+    with open(processed_source, "r") as f:
+        print(f.read())
+else:
+    print(f"\nProcessing source: {processed_source}\n")
+
+
+# Kiểm tra loại ArUco marker hợp lệ
+arucoDictType = ARUCO_DICT.get("DICT_5X5_100", None)
+if arucoDictType is None:
+    print(f"[Error] ArUCo tag type '{args['type']}' is not supported")
+    sys.exit(1)
+
+# Khởi tạo ArUco detector
+arucoDict = cv2.aruco.getPredefinedDictionary(arucoDictType)
+arucoParams = cv2.aruco.DetectorParameters()
+aruco_detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
     
-    # Phát hiện marker
-    corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
-    
-    # Nếu phát hiện được marker
-    if ids is not None:
-        # Vẽ khung quanh các marker được phát hiện
-        aruco.drawDetectedMarkers(frame, corners, ids)
+
+media_manager = MediaManager(
+    source=processed_source,
+    save=args.save,
+    face_recognition=args.face_recognition,
+    face_emotion=args.face_emotion,
+    check_small_face=args.check_small_face,
+    streaming=args.streaming,
+    export_data=args.export_data,
+    time_to_save=args.time_to_save,
+    show_time_process=args.show_time_process,
+    raise_hand=args.raise_hand,
+    view_img=args.view_img,
+    line_thickness=args.line_thickness
+)
+
+for path, _, im0s, vid_cap, s in media_manager.dataset:
+    for im0 in im0s:
+
+
+        # Phát hiện marker
+        corners, ids, rejected = aruco_detector.detectMarkers(im0)
+        image, marker_list = aruco_display(corners, ids, rejected, im0)
         
-        # Lặp qua từng marker để tính toán và hiển thị ID, góc xoay
-        for i in range(len(ids)):
-            # Mỗi marker có 4 góc (corners): thứ tự thường là [trên-trái, trên-phải, dưới-phải, dưới-trái]
-            marker_corners = corners[i][0]
-            marker_id = ids[i][0]
-            
-            # Tính góc xoay của marker: sử dụng vector từ góc trên-trái đến góc trên-phải
-            vector = marker_corners[1] - marker_corners[0]
-            angle = np.degrees(np.arctan2(vector[1], vector[0]))
-            # Điều chỉnh góc về khoảng [0, 360)
-            if angle < 0:
-                angle += 360
-                
-            # Tính tâm của marker để đặt text hiển thị
-            center = marker_corners.mean(axis=0).astype(int)
-            text = f"ID: {marker_id}, Angle: {angle:.1f}"
-            
-            # Hiển thị text lên khung hình
-            cv2.putText(frame, text, tuple(center), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, (0, 0, 255), 2, cv2.LINE_AA)
-    else:
-        # Nếu không phát hiện marker, hiển thị thông báo
-        cv2.putText(frame, "No markers detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7, (0, 0, 255), 2, cv2.LINE_AA)
-    
-    # Hiển thị khung hình kết quả
-    cv2.imshow("AR Marker Detection", frame)
-    
-    # Nhấn ESC để thoát
-    key = cv2.waitKey(1) & 0xFF
-    if key == 27:
-        break
+        if marker_list:
+            print(marker_list)
 
-# Giải phóng tài nguyên
-cap.release()
-cv2.destroyAllWindows()
+        # Hiển thị kết quả
+        cv2.imshow("ArUco Detection", im0)
+
+        # Nhấn 'q' để thoát
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
