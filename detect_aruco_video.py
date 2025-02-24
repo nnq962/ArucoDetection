@@ -2,6 +2,7 @@ import cv2
 import argparse
 import sys
 from utils import ARUCO_DICT, aruco_display
+import time
 
 # Khởi tạo đối tượng phân tích tham số đầu vào
 ap = argparse.ArgumentParser()
@@ -31,6 +32,8 @@ arucoDict = cv2.aruco.getPredefinedDictionary(arucoDictType)
 arucoParams = cv2.aruco.DetectorParameters()
 aruco_detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
 
+prev_time = time.time()
+
 # Vòng lặp xử lý video
 while True:
     ret, frame = video.read()
@@ -40,6 +43,14 @@ while True:
     # Phát hiện marker
     corners, ids, rejected = aruco_detector.detectMarkers(frame)
     detected_markers = aruco_display(corners, ids, rejected, frame)
+
+    # Tính toán FPS
+    curr_time = time.time()
+    fps = 1 / (curr_time - prev_time)
+    prev_time = curr_time
+
+    # Hiển thị FPS trên frame
+    cv2.putText(detected_markers, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     # Hiển thị kết quả
     cv2.imshow("ArUco Detection", detected_markers)
