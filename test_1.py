@@ -4,7 +4,7 @@ from media_manager import MediaManager
 import cv2
 from utils_original import ARUCO_DICT, aruco_display
 import sys
-
+import platform
 
 def process_source(source_arg):
     """
@@ -101,21 +101,35 @@ media_manager = MediaManager(
     view_img=args.view_img,
     line_thickness=args.line_thickness
 )
-
-for path, _, im0s, vid_cap, s in media_manager.dataset:
-    for im0 in im0s:
+path = ["webcam", "camip"]
 
 
-        # Phát hiện marker
-        corners, ids, rejected = aruco_detector.detectMarkers(im0)
-        image, marker_list = aruco_display(corners, ids, rejected, im0)
-        
-        if marker_list:
-            print(marker_list)
+def run_inference():
+    windows = []
 
-        # Hiển thị kết quả
-        cv2.imshow("ArUco Detection", im0)
+    for path, _, im0s, vid_cap, s in media_manager.dataset:
 
-        # Nhấn 'q' để thoát
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
+
+        for img_index, faces in enumerate(im0s):
+            p = path[img_index]
+
+            im0 = im0s[img_index]
+
+
+            # Phát hiện marker
+            corners, ids, rejected = aruco_detector.detectMarkers(im0)
+            image, marker_list = aruco_display(corners, ids, rejected, im0)  
+            if marker_list:
+                print("-" * 80)
+                print(len(marker_list))   
+                            
+            # Stream results
+            if platform.system() == 'Linux' and p not in windows:
+                windows.append(p)
+                cv2.namedWindow(str(p), cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)  # allow window resize (Linux)
+                cv2.resizeWindow(str(p), im0.shape[1], im0.shape[0])
+
+            cv2.imshow(str(p), im0)
+            cv2.waitKey(1)
+
+run_inference()
